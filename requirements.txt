@@ -1,0 +1,11 @@
+streamlit>=1.32
+yfinance>=0.2.40
+pandas>=2.0
+numpy>=1.24
+plotly>=5.18
+feedparser>=6.0
+vaderSentiment>=3.3.2
+lxml>=4.9
+# Optional — enable FinBERT in sidebar (large download on first run):
+# transformers>=4.40
+# torch>=2.0
