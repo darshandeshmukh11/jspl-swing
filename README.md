@@ -26,7 +26,7 @@ streamlit run app.py
    - **Main file:** `app.py` (if repo root is `jspl-swing`)
    - **Main file:** `test/jspl-swing/app.py` (if repo root is parent monorepo)
 2. **Python version:** 3.10+
-3. Dependencies: `requirements.txt` (or `packages.txt` — same list)
+3. Dependencies: **`requirements.txt` only** (Python/pip). Do **not** put pip packages in `packages.txt` — on Streamlit Cloud that file is for **apt** system packages only.
 4. No secrets required for Yahoo/RSS data.
 
 ### Monorepo settings (Streamlit Cloud)
@@ -63,8 +63,7 @@ jspl-swing/
 ├── risk.py
 ├── pipeline.py
 ├── charts.py
-├── requirements.txt
-├── packages.txt        # Streamlit Cloud mirror
+├── requirements.txt    # Python deps (pip) — required for Cloud
 └── .streamlit/config.toml
 ```
 
