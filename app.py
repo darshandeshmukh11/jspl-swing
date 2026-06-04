@@ -128,11 +128,15 @@ def _render_next_session_range(nsr) -> None:
         "Use for tomorrow's stop placement and targets."
     )
 
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3 = st.columns(3)
     m1.metric("Probable low", f"₹{nsr.probable_low:,.2f}")
     m2.metric("Probable high", f"₹{nsr.probable_high:,.2f}")
     m3.metric("Range width", f"₹{nsr.range_width_inr:,.2f}", f"{nsr.range_width_pct:.1f}% of anchor")
-    m4.metric("Core range", f"₹{nsr.core_low:,.2f} – ₹{nsr.core_high:,.2f}", "Tighter expected span")
+
+    st.caption("Core range — tighter expected span within the probable range")
+    c1, c2 = st.columns(2)
+    c1.metric("Core low", f"₹{nsr.core_low:,.2f}")
+    c2.metric("Core high", f"₹{nsr.core_high:,.2f}")
 
     st.markdown(
         f'<div style="padding:12px;border-radius:8px;border:1px solid #404040;'
