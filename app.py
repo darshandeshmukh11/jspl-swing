@@ -23,7 +23,7 @@ from research import build_analyst_view
 from risk import build_trade_decision
 from sentiment import fetch_all_sentiment, sentiment_to_dataframe
 from session_plan import build_session_plan
-from trade_ranges import build_trade_initiation_guide
+from trade_ranges import build_session_trade_context
 
 st.set_page_config(
     page_title="JINDALSTEL Swing DSS",
@@ -119,8 +119,90 @@ def _action_badge(action: str) -> str:
     return colors.get(action, "#94a3b8")
 
 
-def _render_trade_initiation_ranges(guide, decision, as_of: str) -> None:
-    """Prominent buy/sell initiation ranges and prompts."""
+def _render_next_session_range(nsr) -> None:
+    """Probable next-session range with stop-loss and target map."""
+    st.subheader("Next session — probable trading range")
+    st.caption(
+        f"Anchor **₹{nsr.anchor_price:,.2f}** · ATR ₹{nsr.atr:,.2f} · "
+        f"Avg daily range (20d) ₹{nsr.avg_daily_range:,.2f} · "
+        "Use for tomorrow's stop placement and targets."
+    )
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Probable low", f"₹{nsr.probable_low:,.2f}")
+    m2.metric("Probable high", f"₹{nsr.probable_high:,.2f}")
+    m3.metric("Range width", f"₹{nsr.range_width_inr:,.2f}", f"{nsr.range_width_pct:.1f}% of anchor")
+    m4.metric("Core range", f"₹{nsr.core_low:,.2f} – ₹{nsr.core_high:,.2f}", "Tighter expected span")
+
+    st.markdown(
+        f'<div style="padding:12px;border-radius:8px;border:1px solid #404040;'
+        f'background:linear-gradient(90deg,rgba(239,68,68,0.08) 0%,rgba(148,163,184,0.06) 50%,'
+        f'rgba(34,197,94,0.08) 100%);margin:8px 0">'
+        f'<p style="margin:0;color:#a1a1aa;font-size:0.8rem">Range map (low → high)</p>'
+        f'<p style="margin:6px 0 0;font-size:0.95rem;color:#e4e4e7">'
+        f'<span style="color:#f87171">₹{nsr.probable_low:,.2f}</span> · '
+        f'S2 ₹{nsr.s2:,.2f} · S1 ₹{nsr.s1:,.2f} · '
+        f'<span style="color:#c4b5fd">Pivot ₹{nsr.pivot:,.2f}</span> · '
+        f'R1 ₹{nsr.r1:,.2f} · R2 ₹{nsr.r2:,.2f} · '
+        f'<span style="color:#4ade80">₹{nsr.probable_high:,.2f}</span></p></div>',
+        unsafe_allow_html=True,
+    )
+
+    levels = pd.DataFrame(
+        [
+            {
+                "Level": "Probable range low",
+                "₹": nsr.probable_low,
+                "Risk / reward use": "Floor of expected session — break below weakens long thesis",
+            },
+            {
+                "Level": "Stop (tight)",
+                "₹": nsr.stop_tight,
+                "Risk / reward use": "Primary stop-loss for new longs",
+            },
+            {
+                "Level": "Stop (wide / S2)",
+                "₹": nsr.stop_wide,
+                "Risk / reward use": "Wider stop if you want more room",
+            },
+            {
+                "Level": "Core range low",
+                "₹": nsr.core_low,
+                "Risk / reward use": "Tighter support within probable range",
+            },
+            {
+                "Level": "Core range high",
+                "₹": nsr.core_high,
+                "Risk / reward use": "Tighter resistance within probable range",
+            },
+            {
+                "Level": "Target 1 (R1)",
+                "₹": nsr.target_1,
+                "Risk / reward use": "First profit target — partial book",
+            },
+            {
+                "Level": "Target 2 (R2)",
+                "₹": nsr.target_2,
+                "Risk / reward use": "Stretch target — trail remainder",
+            },
+            {
+                "Level": "Probable range high",
+                "₹": nsr.probable_high,
+                "Risk / reward use": "Ceiling of expected session — fade / trim above",
+            },
+        ]
+    )
+    st.dataframe(levels, use_container_width=True, hide_index=True)
+
+    st.markdown(nsr.risk_note, unsafe_allow_html=True)
+    st.markdown(nsr.target_note, unsafe_allow_html=True)
+
+
+def _render_trade_initiation_ranges(ctx, decision, as_of: str) -> None:
+    """Prominent buy/sell initiation ranges, next-session range, and prompts."""
+    guide = ctx.initiation
+    nsr = ctx.next_session
+
     st.subheader("Where to initiate buy or sell")
     st.caption(
         f"Reference price: **₹{guide.reference_price:,.2f}** · Zones from EOD bar **{as_of}**"
@@ -181,14 +263,18 @@ def _render_trade_initiation_ranges(guide, decision, as_of: str) -> None:
             "Bias is **WAIT** — use buy zone for staged limits; confirm triggers on the **Next session** tab."
         )
 
-    with st.expander("Quick reference — all price levels", expanded=False):
+    _render_next_session_range(nsr)
+
+    with st.expander("Quick reference — initiation & range levels", expanded=False):
         st.dataframe(
             pd.DataFrame(
                 [
+                    {"Use": "Probable range (next session)", "Low ₹": nsr.probable_low, "High ₹": nsr.probable_high},
+                    {"Use": "Core range (tighter)", "Low ₹": nsr.core_low, "High ₹": nsr.core_high},
                     {"Use": "Buy zone (initiate long)", "Low ₹": guide.buy_low, "High ₹": guide.buy_high},
                     {"Use": "Sell zone (book / trim)", "Low ₹": guide.sell_low, "High ₹": guide.sell_high},
                     {"Use": "Suggested entry", "Low ₹": guide.entry_low, "High ₹": guide.entry_high},
-                    {"Use": "Stop loss", "Low ₹": guide.stop, "High ₹": "—"},
+                    {"Use": "Stop tight / wide", "Low ₹": nsr.stop_tight, "High ₹": nsr.stop_wide},
                     {"Use": "Target 1 / 2", "Low ₹": guide.target_1, "High ₹": guide.target_2},
                 ]
             ),
@@ -240,8 +326,8 @@ def main() -> None:
     rs = live.get("relative_strength_20d")
     c6.metric("RS vs metal (20d)", f"{rs:+.1f}%" if rs is not None else "—")
 
-    guide = build_trade_initiation_guide(plan, stock.price)
-    _render_trade_initiation_ranges(guide, decision, plan.as_of)
+    trade_ctx = build_session_trade_context(plan, df, stock.price)
+    _render_trade_initiation_ranges(trade_ctx, decision, plan.as_of)
 
     st.markdown(
         f'<div style="padding:12px;border-left:4px solid {_bias_color(decision.bias)};'

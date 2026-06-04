@@ -9,6 +9,7 @@ No dependency on other folders in the monorepo — deploy this directory alone.
 - **Nifty Metal** live quote (or steel peer basket fallback)
 - Technical stack: EMA, RSI, VWAP, ATR, MACD, ADX, Bollinger, Stochastic, Supertrend, floor pivots
 - **Buy/sell initiation ranges** with prompts (INITIATE / PREPARE / WAIT) vs live price
+- **Next-session probable range** (ATR + 20d avg range + pivots) with stop-loss and target map
 - Buy/sell zones on chart, confluence score, next-session plan, ATR risk sizing
 
 ## Local run
