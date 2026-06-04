@@ -8,7 +8,11 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from advanced_ta import add_advanced_indicators
+from indicators import add_indicators
+from jspl_config import JSPLSwingConfig
 from market_live import LiveQuote
+from signals import generate_signals
 from zones import add_zones
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -77,7 +81,7 @@ def merge_live_into_daily(
 
 def apply_live_for_trading(
     df: pd.DataFrame,
-    dss_cfg,
+    cfg: JSPLSwingConfig,
     stock: Optional[LiveQuote],
     *,
     use_live: bool = True,
@@ -103,7 +107,11 @@ def apply_live_for_trading(
         day_high=stock.day_high,
         day_low=stock.day_low,
     )
-    work = add_zones(work, dss_cfg)
+    # Recompute indicators/zones on the live-adjusted OHLCV (avoids NaN on new session bar).
+    work = add_indicators(work, cfg.dss)
+    work = add_advanced_indicators(work, cfg)
+    work = add_zones(work, cfg.dss)
+    work = generate_signals(work, cfg.dss)
 
     session_bar = pd.Timestamp(work.index[-1]).strftime("%Y-%m-%d")
     now = ist_now().strftime("%H:%M")

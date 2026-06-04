@@ -12,6 +12,30 @@ from market_live import LiveQuote
 from zones import latest_zones
 
 
+def _safe_float(val: object, default: float = 0.0) -> float:
+    try:
+        num = float(val)
+    except (TypeError, ValueError):
+        return default
+    return default if pd.isna(num) else num
+
+
+def _safe_int(val: object, default: int = -1) -> int:
+    try:
+        num = float(val)
+    except (TypeError, ValueError):
+        return default
+    if pd.isna(num):
+        return default
+    return int(num)
+
+
+def _safe_bool(val: object) -> bool:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return False
+    return bool(val)
+
+
 @dataclass
 class SessionPlan:
     as_of: str
@@ -76,30 +100,39 @@ def build_session_plan(
     target_1 = max(sell_lo, piv["R1"])
     target_2 = max(sell_hi, piv["R2"])
 
-    entry_low = round(min(buy_lo, piv["S1"], float(last.get("EMA20", buy_lo))), 2)
+    ema20 = _safe_float(last.get("EMA20"), buy_lo)
+    entry_low = round(min(buy_lo, piv["S1"], ema20), 2)
     entry_high = round(max(buy_hi, piv["PIVOT"] * 0.998), 2)
 
     triggers: list[str] = []
     warnings: list[str] = []
 
-    if bool(last.get("BUY_SIGNAL", False)):
+    rsi = _safe_float(last.get("RSI"), 50.0)
+    macd_hist = _safe_float(last.get("MACD_HIST"), 0.0)
+    prev_macd = _safe_float(df.iloc[-2].get("MACD_HIST", 0), 0.0) if len(df) >= 2 else 0.0
+    adx = _safe_float(last.get("ADX"), 0.0)
+    st_dir = _safe_int(last.get("SUPERTREND_DIR"), -1)
+    ema50 = _safe_float(last.get("EMA50"), close)
+    bb_pct_b = _safe_float(last.get("BB_PCT_B"), 0.5)
+
+    if _safe_bool(last.get("BUY_SIGNAL")):
         triggers.append("EOD buy signal active — trend + dip zone confluence")
     if close <= buy_hi and close >= buy_lo:
         triggers.append(f"Price inside buy zone ₹{buy_lo:,.2f}–₹{buy_hi:,.2f}")
-    if float(last.get("RSI", 50)) <= cfg.rsi_oversold + 5:
-        triggers.append(f"RSI supportive ({float(last['RSI']):.1f})")
-    if float(last.get("MACD_HIST", 0)) > 0 and float(last.get("MACD_HIST", 0)) > float(df.iloc[-2].get("MACD_HIST", 0)):
+    if rsi <= cfg.rsi_oversold + 5:
+        triggers.append(f"RSI supportive ({rsi:.1f})")
+    if macd_hist > 0 and macd_hist > prev_macd:
         triggers.append("MACD histogram rising (momentum)")
-    if float(last.get("ADX", 0)) >= cfg.adx_trend_min:
+    if adx >= cfg.adx_trend_min:
         triggers.append(f"ADX ≥ {cfg.adx_trend_min} — trend strength OK")
-    if int(last.get("SUPERTREND_DIR", -1)) == 1:
+    if st_dir == 1:
         triggers.append("Supertrend bullish")
 
-    if close < float(last.get("EMA50", close)):
+    if close < ema50:
         warnings.append("Below 50 EMA — weak swing long bias")
-    if float(last.get("RSI", 50)) >= cfg.rsi_overbought:
+    if rsi >= cfg.rsi_overbought:
         warnings.append("RSI overbought — avoid chasing")
-    if float(last.get("BB_PCT_B", 0.5)) > 1.0:
+    if bb_pct_b > 1.0:
         warnings.append("Above upper Bollinger — extended move")
 
     session_bar = pd.Timestamp(df.index[-1]).strftime("%Y-%m-%d")

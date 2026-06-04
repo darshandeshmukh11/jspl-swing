@@ -23,7 +23,7 @@ from research import build_analyst_view
 from risk import build_trade_decision
 from sentiment import fetch_all_sentiment, sentiment_to_dataframe
 from live_session import apply_live_for_trading
-from session_plan import build_session_plan
+from session_plan import _safe_int, build_session_plan
 from trade_ranges import build_session_trade_context
 
 st.set_page_config(
@@ -316,7 +316,7 @@ def main() -> None:
 
     df_trade, zone_label, live_ltp, eod_close, eod_bar = apply_live_for_trading(
         df,
-        cfg.dss,
+        cfg,
         stock,
         use_live=use_live_zones,
     )
@@ -443,7 +443,7 @@ def main() -> None:
     with tab_ta:
         st.plotly_chart(build_jspl_chart(df_trade, cfg, plan, swing_bt.trades), use_container_width=True)
         st.subheader("Indicator snapshot (latest)")
-        last = df.iloc[-1]
+        last = df_trade.iloc[-1]
         ind_df = pd.DataFrame(
             [
                 {"Indicator": "Close", "Value": f"₹{float(last['Close']):,.2f}"},
@@ -453,7 +453,7 @@ def main() -> None:
                 {"Indicator": "Stoch %K", "Value": f"{float(last.get('STOCH_K', 0)):.1f}"},
                 {"Indicator": "BB %B", "Value": f"{float(last.get('BB_PCT_B', 0)):.2f}"},
                 {"Indicator": "Vol ratio", "Value": f"{float(last['VOL_RATIO']):.2f}×"},
-                {"Indicator": "Supertrend", "Value": "UP" if int(last.get("SUPERTREND_DIR", -1)) == 1 else "DOWN"},
+                {"Indicator": "Supertrend", "Value": "UP" if _safe_int(last.get("SUPERTREND_DIR"), -1) == 1 else "DOWN"},
             ]
         )
         st.dataframe(ind_df, use_container_width=True, hide_index=True)

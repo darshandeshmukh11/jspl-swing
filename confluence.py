@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from jspl_config import JSPLSwingConfig
+from session_plan import _safe_int
 from sentiment import SentimentBucket
 
 
@@ -44,7 +45,7 @@ def compute_confluence(
     ema20 = float(last.get("EMA20", close))
     ema50 = float(last.get("EMA50", close))
     adx = float(last.get("ADX", 0)) if pd.notna(last.get("ADX")) else 0
-    st_dir = int(last.get("SUPERTREND_DIR", -1))
+    st_dir = _safe_int(last.get("SUPERTREND_DIR"), -1)
 
     if close > ema20 > ema50:
         trend_pts += 18
