@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from advanced_ta import floor_pivots_from_bar
 from jspl_config import JSPLSwingConfig
+from market_live import LiveQuote
 from zones import latest_zones
 
 
@@ -33,24 +35,36 @@ class SessionPlan:
     entry_high: float
     triggers: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    data_label: str = ""
+    live_ltp: float | None = None
+    eod_close: float | None = None
+    eod_date: str = ""
 
 
-def build_session_plan(df: pd.DataFrame, cfg: JSPLSwingConfig) -> SessionPlan:
+def build_session_plan(
+    df: pd.DataFrame,
+    cfg: JSPLSwingConfig,
+    stock: LiveQuote | None = None,
+    *,
+    data_label: str = "",
+    eod_close: float | None = None,
+    eod_bar_date: str = "",
+) -> SessionPlan:
     if df.empty:
         raise ValueError("No OHLCV data")
 
     last = df.iloc[-1]
-    close = float(last["Close"])
+    bar_close = float(last["Close"])
+    live_ltp = float(stock.price) if stock and stock.price > 0 else None
+    close = live_ltp if live_ltp is not None else bar_close
     atr = float(last["ATR"]) if pd.notna(last.get("ATR")) else close * 0.015
     zones = latest_zones(df)
 
-    piv = {
-        "PIVOT": float(last.get("PIVOT", close)),
-        "S1": float(last.get("S1", zones.get("support", close * 0.97))),
-        "S2": float(last.get("S2", zones.get("support", close * 0.95) * 0.99)),
-        "R1": float(last.get("R1", zones.get("resistance", close * 1.03))),
-        "R2": float(last.get("R2", zones.get("resistance", close * 1.05) * 1.01)),
-    }
+    piv = floor_pivots_from_bar(
+        float(last["High"]),
+        float(last["Low"]),
+        bar_close,
+    )
 
     buy_lo = zones.get("buy_low", close * 0.98)
     buy_hi = zones.get("buy_high", close * 1.0)
@@ -88,7 +102,14 @@ def build_session_plan(df: pd.DataFrame, cfg: JSPLSwingConfig) -> SessionPlan:
     if float(last.get("BB_PCT_B", 0.5)) > 1.0:
         warnings.append("Above upper Bollinger — extended move")
 
-    as_of = pd.Timestamp(df.index[-1]).strftime("%Y-%m-%d")
+    session_bar = pd.Timestamp(df.index[-1]).strftime("%Y-%m-%d")
+    as_of = f"{session_bar} (live)" if live_ltp is not None else session_bar
+    if live_ltp is not None:
+        eod_date = eod_bar_date or session_bar
+        eod_close_val = eod_close if eod_close is not None else bar_close
+    else:
+        eod_date = session_bar
+        eod_close_val = bar_close
 
     return SessionPlan(
         as_of=as_of,
@@ -112,4 +133,8 @@ def build_session_plan(df: pd.DataFrame, cfg: JSPLSwingConfig) -> SessionPlan:
         entry_high=entry_high,
         triggers=triggers,
         warnings=warnings,
+        data_label=data_label,
+        live_ltp=live_ltp,
+        eod_close=round(eod_close_val, 2),
+        eod_date=eod_date,
     )

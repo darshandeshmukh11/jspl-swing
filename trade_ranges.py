@@ -61,6 +61,7 @@ class NextSessionRange:
 class SessionTradeContext:
     initiation: TradeInitiationGuide
     next_session: NextSessionRange
+    data_label: str = ""
 
 
 def _zone_status(price: float, low: float, high: float) -> str:
@@ -226,8 +227,14 @@ def build_session_trade_context(
     plan: SessionPlan,
     df: pd.DataFrame,
     live_price: float | None = None,
+    *,
+    data_label: str = "",
 ) -> SessionTradeContext:
+    label = data_label or plan.data_label or (
+        f"Reference **₹{plan.close:,.2f}** · bar **{plan.as_of}**"
+    )
     return SessionTradeContext(
         initiation=build_trade_initiation_guide(plan, live_price),
         next_session=build_next_session_range(plan, df, live_price),
+        data_label=label,
     )

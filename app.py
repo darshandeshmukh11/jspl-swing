@@ -22,6 +22,7 @@ from pipeline import build_enriched_frame
 from research import build_analyst_view
 from risk import build_trade_decision
 from sentiment import fetch_all_sentiment, sentiment_to_dataframe
+from live_session import apply_live_for_trading
 from session_plan import build_session_plan
 from trade_ranges import build_session_trade_context
 
@@ -51,9 +52,18 @@ def _dark_css() -> None:
     )
 
 
-def _sidebar() -> tuple[JSPLSwingConfig, bool]:
+def _sidebar() -> tuple[JSPLSwingConfig, bool, bool]:
     st.sidebar.header("JSPL Swing DSS")
     st.sidebar.caption("JINDALSTEL.NS · Nifty Metal · steel sentiment")
+
+    use_live_zones = st.sidebar.checkbox(
+        "Live LTP for buy/sell zones",
+        value=True,
+        help="Updates today's session bar with Yahoo live price and recomputes zones.",
+    )
+    eod_only = st.sidebar.checkbox("EOD bar only (no live)", value=False)
+    if eod_only:
+        use_live_zones = False
 
     risk_inr = st.sidebar.number_input("Risk per trade (₹)", 5000, 200_000, 25_000, 5000)
     min_rr = st.sidebar.slider("Min reward:risk", 1.0, 3.0, 1.5, 0.1)
@@ -73,7 +83,7 @@ def _sidebar() -> tuple[JSPLSwingConfig, bool]:
         risk_per_trade_inr=float(risk_inr),
         use_finbert=use_finbert,
     )
-    return cfg, auto
+    return cfg, auto, use_live_zones
 
 
 @st.cache_data(ttl=3600, show_spinner="Loading OHLCV & indicators…")
@@ -125,7 +135,7 @@ def _render_next_session_range(nsr) -> None:
     st.caption(
         f"Anchor **₹{nsr.anchor_price:,.2f}** · ATR ₹{nsr.atr:,.2f} · "
         f"Avg daily range (20d) ₹{nsr.avg_daily_range:,.2f} · "
-        "Use for tomorrow's stop placement and targets."
+        "Stops/targets for next session."
     )
 
     m1, m2, m3 = st.columns(3)
@@ -208,9 +218,10 @@ def _render_trade_initiation_ranges(ctx, decision, as_of: str) -> None:
     nsr = ctx.next_session
 
     st.subheader("Where to initiate buy or sell")
-    st.caption(
-        f"Reference price: **₹{guide.reference_price:,.2f}** · Zones from EOD bar **{as_of}**"
+    label = ctx.data_label or (
+        f"Reference price: **₹{guide.reference_price:,.2f}** · Zones from bar **{as_of}**"
     )
+    st.markdown(label)
 
     b_col, s_col = st.columns(2)
 
@@ -289,7 +300,7 @@ def _render_trade_initiation_ranges(ctx, decision, as_of: str) -> None:
 
 def main() -> None:
     _dark_css()
-    cfg, auto_refresh = _sidebar()
+    cfg, auto_refresh, use_live_zones = _sidebar()
 
     if st.sidebar.button("Refresh now", type="primary"):
         st.cache_data.clear()
@@ -301,8 +312,22 @@ def main() -> None:
     live = _load_live(cfg)
     sentiment = _load_sentiment(cfg)
     df, fundamentals, adherence, swing_bt = _load_technicals(cfg)
+    stock = live["stock"]
 
-    plan = build_session_plan(df, cfg)
+    df_trade, zone_label, live_ltp, eod_close, eod_bar = apply_live_for_trading(
+        df,
+        cfg.dss,
+        stock,
+        use_live=use_live_zones,
+    )
+    plan = build_session_plan(
+        df_trade,
+        cfg,
+        stock if use_live_zones and stock.price > 0 else None,
+        data_label=zone_label,
+        eod_close=eod_close,
+        eod_bar_date=eod_bar,
+    )
     confluence = compute_confluence(
         df,
         sentiment,
@@ -310,7 +335,7 @@ def main() -> None:
         live.get("relative_strength_20d"),
     )
     decision = build_trade_decision(
-        df,
+        df_trade,
         plan,
         confluence,
         sentiment,
@@ -319,7 +344,6 @@ def main() -> None:
     )
 
     # --- Top metrics ---
-    stock = live["stock"]
     metal = live["metal"]
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("JINDALSTEL", f"₹{stock.price:,.2f}", f"{stock.change_pct:+.2f}%")
@@ -330,7 +354,12 @@ def main() -> None:
     rs = live.get("relative_strength_20d")
     c6.metric("RS vs metal (20d)", f"{rs:+.1f}%" if rs is not None else "—")
 
-    trade_ctx = build_session_trade_context(plan, df, stock.price)
+    trade_ctx = build_session_trade_context(
+        plan,
+        df_trade,
+        live_ltp or (stock.price if use_live_zones else None),
+        data_label=zone_label,
+    )
     _render_trade_initiation_ranges(trade_ctx, decision, plan.as_of)
 
     st.markdown(
@@ -412,7 +441,7 @@ def main() -> None:
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     with tab_ta:
-        st.plotly_chart(build_jspl_chart(df, cfg, plan, swing_bt.trades), use_container_width=True)
+        st.plotly_chart(build_jspl_chart(df_trade, cfg, plan, swing_bt.trades), use_container_width=True)
         st.subheader("Indicator snapshot (latest)")
         last = df.iloc[-1]
         ind_df = pd.DataFrame(

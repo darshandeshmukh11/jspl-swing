@@ -8,7 +8,7 @@ No dependency on other folders in the monorepo — deploy this directory alone.
 - Steel macro + sector + stock **news sentiment** (VADER; optional FinBERT)
 - **Nifty Metal** live quote (or steel peer basket fallback)
 - Technical stack: EMA, RSI, VWAP, ATR, MACD, ADX, Bollinger, Stochastic, Supertrend, floor pivots
-- **Buy/sell initiation ranges** with prompts (INITIATE / PREPARE / WAIT) vs live price
+- **Buy/sell initiation ranges** with live LTP (default) or EOD-only mode — zones recomputed on today's bar
 - **Next-session probable range** (ATR + 20d avg range + pivots) with stop-loss and target map
 - Buy/sell zones on chart, confluence score, next-session plan, ATR risk sizing
 
