@@ -8,7 +8,8 @@ No dependency on other folders in the monorepo — deploy this directory alone.
 - Steel macro + sector + stock **news sentiment** (VADER; optional FinBERT)
 - **Nifty Metal** live quote (or steel peer basket fallback)
 - Technical stack: EMA, RSI, VWAP, ATR, MACD, ADX, Bollinger, Stochastic, Supertrend, floor pivots
-- Buy/sell zones, confluence score, next-session plan, ATR risk sizing
+- **Buy/sell initiation ranges** with prompts (INITIATE / PREPARE / WAIT) vs live price
+- Buy/sell zones on chart, confluence score, next-session plan, ATR risk sizing
 
 ## Local run
 
@@ -26,7 +27,7 @@ streamlit run app.py
    - **Main file:** `app.py` (if repo root is `jspl-swing`)
    - **Main file:** `test/jspl-swing/app.py` (if repo root is parent monorepo)
 2. **Python version:** 3.10+
-3. Dependencies: **`requirements.txt` only** (Python/pip). Do **not** put pip packages in `packages.txt` — on Streamlit Cloud that file is for **apt** system packages only.
+3. Dependencies: **`requirements.txt` only** (no `packages.txt`).
 4. No secrets required for Yahoo/RSS data.
 
 ### Monorepo settings (Streamlit Cloud)
@@ -53,6 +54,7 @@ jspl-swing/
 ├── data.py             # Yahoo OHLCV + fundamentals
 ├── indicators.py
 ├── zones.py
+├── trade_ranges.py   # Buy/sell initiation prompts
 ├── signals.py
 ├── research.py
 ├── advanced_ta.py

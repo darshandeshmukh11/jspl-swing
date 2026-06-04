@@ -23,6 +23,7 @@ from research import build_analyst_view
 from risk import build_trade_decision
 from sentiment import fetch_all_sentiment, sentiment_to_dataframe
 from session_plan import build_session_plan
+from trade_ranges import build_trade_initiation_guide
 
 st.set_page_config(
     page_title="JINDALSTEL Swing DSS",
@@ -109,6 +110,93 @@ def _bias_color(bias: str) -> str:
     }.get(bias, "#94a3b8")
 
 
+def _action_badge(action: str) -> str:
+    colors = {
+        "INITIATE": "#22c55e",
+        "PREPARE": "#3b82f6",
+        "WAIT": "#eab308",
+    }
+    return colors.get(action, "#94a3b8")
+
+
+def _render_trade_initiation_ranges(guide, decision, as_of: str) -> None:
+    """Prominent buy/sell initiation ranges and prompts."""
+    st.subheader("Where to initiate buy or sell")
+    st.caption(
+        f"Reference price: **₹{guide.reference_price:,.2f}** · Zones from EOD bar **{as_of}**"
+    )
+
+    b_col, s_col = st.columns(2)
+
+    with b_col:
+        st.markdown(
+            f'<div style="padding:14px;border-radius:8px;border:1px solid #333;'
+            f'border-left:5px solid {_action_badge(guide.buy_action)};background:#141414">'
+            f'<p style="margin:0 0 8px;color:#a1a1aa;font-size:0.85rem">BUY initiation</p>'
+            f'<p style="margin:0;font-size:1.35rem;font-weight:600;color:#4ade80">'
+            f"₹{guide.buy_low:,.2f} – ₹{guide.buy_high:,.2f}</p>"
+            f'<p style="margin:6px 0 0;color:#71717a;font-size:0.8rem">'
+            f"Entry band ₹{guide.entry_low:,.2f}–₹{guide.entry_high:,.2f} · "
+            f"Stop ₹{guide.stop:,.2f}</p>"
+            f'<p style="margin:10px 0 0;color:#e4e4e7;font-size:0.95rem">{guide.buy_prompt}</p>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        if guide.buy_status == "IN_ZONE":
+            st.success(f"Action: **{guide.buy_action}** — price is in the buy zone")
+        elif guide.buy_action == "PREPARE":
+            st.info(f"Action: **{guide.buy_action}** — set limits in the buy range")
+        else:
+            st.warning(f"Action: **{guide.buy_action}**")
+
+    with s_col:
+        st.markdown(
+            f'<div style="padding:14px;border-radius:8px;border:1px solid #333;'
+            f'border-left:5px solid {_action_badge(guide.sell_action)};background:#141414">'
+            f'<p style="margin:0 0 8px;color:#a1a1aa;font-size:0.85rem">SELL initiation</p>'
+            f'<p style="margin:0;font-size:1.35rem;font-weight:600;color:#f87171">'
+            f"₹{guide.sell_low:,.2f} – ₹{guide.sell_high:,.2f}</p>"
+            f'<p style="margin:6px 0 0;color:#71717a;font-size:0.8rem">'
+            f"T1 ₹{guide.target_1:,.2f} · T2 ₹{guide.target_2:,.2f}</p>"
+            f'<p style="margin:10px 0 0;color:#e4e4e7;font-size:0.95rem">{guide.sell_prompt}</p>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        if guide.sell_status == "IN_ZONE":
+            st.success(f"Action: **{guide.sell_action}** — price is in the sell zone")
+        elif guide.sell_action == "INITIATE":
+            st.success(f"Action: **{guide.sell_action}**")
+        elif guide.sell_action == "PREPARE":
+            st.info(f"Action: **{guide.sell_action}**")
+        else:
+            st.warning(f"Action: **{guide.sell_action}**")
+
+    if decision.bias in ("AVOID", "REDUCE"):
+        st.error(
+            f"Bias is **{decision.bias}** — treat buy ranges as reference only; "
+            "prefer risk reduction or wait until gates pass."
+        )
+    elif decision.bias == "WAIT":
+        st.warning(
+            "Bias is **WAIT** — use buy zone for staged limits; confirm triggers on the **Next session** tab."
+        )
+
+    with st.expander("Quick reference — all price levels", expanded=False):
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {"Use": "Buy zone (initiate long)", "Low ₹": guide.buy_low, "High ₹": guide.buy_high},
+                    {"Use": "Sell zone (book / trim)", "Low ₹": guide.sell_low, "High ₹": guide.sell_high},
+                    {"Use": "Suggested entry", "Low ₹": guide.entry_low, "High ₹": guide.entry_high},
+                    {"Use": "Stop loss", "Low ₹": guide.stop, "High ₹": "—"},
+                    {"Use": "Target 1 / 2", "Low ₹": guide.target_1, "High ₹": guide.target_2},
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
 def main() -> None:
     _dark_css()
     cfg, auto_refresh = _sidebar()
@@ -151,6 +239,9 @@ def main() -> None:
     c5.metric("ATR (next session)", f"₹{plan.atr:,.2f}", f"{plan.atr_pct:.2f}% of price")
     rs = live.get("relative_strength_20d")
     c6.metric("RS vs metal (20d)", f"{rs:+.1f}%" if rs is not None else "—")
+
+    guide = build_trade_initiation_guide(plan, stock.price)
+    _render_trade_initiation_ranges(guide, decision, plan.as_of)
 
     st.markdown(
         f'<div style="padding:12px;border-left:4px solid {_bias_color(decision.bias)};'
