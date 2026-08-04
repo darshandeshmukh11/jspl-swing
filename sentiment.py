@@ -178,35 +178,52 @@ def fetch_all_sentiment(
     peer_tickers: list[str],
     max_per_bucket: int = 25,
     use_finbert: bool = False,
+    *,
+    symbol: str = "",
+    company_name: str = "",
+    sector: str = "",
+    industry: str = "",
+    is_steel_stock: bool = False,
 ) -> dict[str, SentimentBucket]:
-    from news_queries import JINDAL_QUERIES, STEEL_MACRO_QUERIES, STEEL_SECTOR_QUERIES
+    from news_queries import (
+        JINDAL_QUERIES,
+        STEEL_MACRO_QUERIES,
+        STEEL_SECTOR_QUERIES,
+        sector_queries,
+        stock_queries,
+    )
 
+    macro_queries = STEEL_MACRO_QUERIES if is_steel_stock else sector_queries(sector, industry)
     macro_raw: list[dict] = []
-    for q in STEEL_MACRO_QUERIES[:3]:
+    for q in macro_queries[:3]:
         macro_raw.extend(_fetch_google_news_rss(q, max_per_bucket // 3 + 1))
 
     sector_raw: list[dict] = []
-    for q in STEEL_SECTOR_QUERIES[:2]:
+    sector_query_list = STEEL_SECTOR_QUERIES if is_steel_stock else sector_queries(sector, industry)
+    for q in sector_query_list[:2]:
         sector_raw.extend(_fetch_google_news_rss(q, max_per_bucket // 2 + 1))
     for pt in peer_tickers[:4]:
         sector_raw.extend(_fetch_yfinance_news(pt, 5))
 
     stock_raw: list[dict] = []
-    for q in JINDAL_QUERIES:
+    stock_query_list = JINDAL_QUERIES if is_steel_stock else stock_queries(symbol or yahoo_ticker, company_name)
+    for q in stock_query_list:
         stock_raw.extend(_fetch_google_news_rss(q, max_per_bucket // 2 + 1))
     stock_raw.extend(_fetch_yfinance_news(yahoo_ticker, max_per_bucket))
 
+    stock_label = company_name or symbol or yahoo_ticker
+
     return {
-        "steel_macro": aggregate_bucket(
-            "Steel market (macro)",
+        "sector_macro": aggregate_bucket(
+            "Sector / macro",
             score_headlines(macro_raw[:max_per_bucket], use_finbert),
         ),
-        "steel_sector": aggregate_bucket(
-            "Steel sector (peers)",
+        "sector_peers": aggregate_bucket(
+            "Sector peers",
             score_headlines(sector_raw[:max_per_bucket], use_finbert),
         ),
-        "jindalstel": aggregate_bucket(
-            "JINDALSTEL",
+        "stock": aggregate_bucket(
+            stock_label,
             score_headlines(stock_raw[:max_per_bucket], use_finbert),
         ),
     }

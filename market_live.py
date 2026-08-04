@@ -100,17 +100,30 @@ def fetch_live_dashboard(
     stock_ticker: str,
     metal_candidates: tuple[str, ...],
     peer_tickers: list[str],
+    *,
+    stock_name: str = "",
+    benchmark_index: str = "^NSEI",
+    use_sector_benchmark: bool = False,
 ) -> dict:
-    stock = _quote_from_info(stock_ticker, "JINDALSTEL") or LiveQuote(
-        stock_ticker, "JINDALSTEL", 0.0, 0.0, 0.0, 0.0, 0.0, "unavailable"
+    display_name = stock_name or stock_ticker
+    stock = _quote_from_info(stock_ticker, display_name) or LiveQuote(
+        stock_ticker, display_name, 0.0, 0.0, 0.0, 0.0, 0.0, "unavailable"
     )
-    metal_ticker, metal_kind = resolve_metal_index(metal_candidates)
-    if metal_kind == "index" and metal_ticker:
-        metal = _quote_from_info(metal_ticker, "Nifty Metal", "NSE metal index") or steel_basket_quote(
-            peer_tickers
-        )
+
+    if use_sector_benchmark:
+        metal_ticker, metal_kind = resolve_metal_index(metal_candidates)
+        if metal_kind == "index" and metal_ticker:
+            metal = _quote_from_info(metal_ticker, "Sector index", "NSE sector index") or steel_basket_quote(
+                peer_tickers
+            )
+        else:
+            metal = steel_basket_quote(peer_tickers)
+        benchmark_ticker_for_rs = metal_ticker or (peer_tickers[0] if peer_tickers else benchmark_index)
     else:
-        metal = steel_basket_quote(peer_tickers)
+        metal = _quote_from_info(benchmark_index, "NIFTY 50") or LiveQuote(
+            benchmark_index, "NIFTY 50", 0.0, 0.0, 0.0, 0.0, 0.0, "unavailable"
+        )
+        benchmark_ticker_for_rs = benchmark_index
 
     peers: list[LiveQuote] = []
     for t in peer_tickers[:6]:
@@ -118,14 +131,14 @@ def fetch_live_dashboard(
         if q:
             peers.append(q)
 
-    rs_20d = compute_relative_strength(stock_ticker, metal_ticker or peer_tickers[0], peer_tickers)
+    rs_20d = compute_relative_strength(stock_ticker, benchmark_ticker_for_rs, peer_tickers)
     return {
         "stock": stock,
         "metal": metal,
         "peers": peers,
         "relative_strength_20d": rs_20d,
         "stock_sparkline": fetch_intraday_sparkline(stock_ticker),
-        "metal_sparkline": fetch_intraday_sparkline(metal_ticker) if metal_ticker else pd.DataFrame(),
+        "metal_sparkline": fetch_intraday_sparkline(benchmark_ticker_for_rs) if benchmark_ticker_for_rs else pd.DataFrame(),
     }
 
 

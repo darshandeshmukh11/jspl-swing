@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-JINDALSTEL swing trading decision support — Streamlit UI (self-contained).
+NSE swing trading decision support — Streamlit UI (self-contained).
+
+Pick any NIFTY 50 / NIFTY 100 stock from the sidebar dropdown (defaults to JINDALSTEL).
 
 Run from this directory:
   pip install -r requirements.txt && streamlit run app.py
@@ -16,6 +18,7 @@ import streamlit as st
 
 from charts import build_jspl_chart
 from confluence import compute_confluence
+from data import get_nifty50_and_100_universe, resolve_yahoo_ticker
 from jspl_config import JSPLSwingConfig
 from market_live import fetch_live_dashboard
 from pipeline import build_enriched_frame
@@ -27,7 +30,7 @@ from session_plan import _safe_int, build_session_plan
 from trade_ranges import build_session_trade_context
 
 st.set_page_config(
-    page_title="JINDALSTEL Swing DSS",
+    page_title="Stock Swing DSS",
     page_icon="⚙️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -37,6 +40,8 @@ DISCLAIMER = (
     "_Research support only — not investment advice. Free data may be delayed. "
     "Past signals ≠ future results._"
 )
+
+DEFAULT_SYMBOL = "JINDALSTEL"
 
 
 def _dark_css() -> None:
@@ -52,9 +57,27 @@ def _dark_css() -> None:
     )
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _stock_universe() -> list[str]:
+    symbols, _n50 = get_nifty50_and_100_universe(prefer_live=True)
+    # Make sure the historical default is always selectable even if it drops out of the index.
+    if DEFAULT_SYMBOL not in symbols:
+        symbols = sorted(set(symbols) | {DEFAULT_SYMBOL})
+    return symbols
+
+
 def _sidebar() -> tuple[JSPLSwingConfig, bool, bool]:
-    st.sidebar.header("JSPL Swing DSS")
-    st.sidebar.caption("JINDALSTEL.NS · Nifty Metal · steel sentiment")
+    st.sidebar.header("Swing DSS")
+
+    universe = _stock_universe()
+    default_idx = universe.index(DEFAULT_SYMBOL) if DEFAULT_SYMBOL in universe else 0
+    symbol = st.sidebar.selectbox(
+        "Stock",
+        options=universe,
+        index=default_idx,
+        help="NIFTY 50 + NIFTY 100 universe. Type to search.",
+    )
+    st.sidebar.caption(f"{resolve_yahoo_ticker(symbol)} · sentiment, confluence & ATR risk plan")
 
     use_live_zones = st.sidebar.checkbox(
         "Live LTP for buy/sell zones",
@@ -76,6 +99,7 @@ def _sidebar() -> tuple[JSPLSwingConfig, bool, bool]:
         st.sidebar.slider("Refresh (sec)", 60, 600, 300, 30, key="refresh_sec")
 
     cfg = JSPLSwingConfig(
+        symbol=symbol,
         years=int(years),
         swing_pct=float(swing_pct),
         stop_atr_mult=float(stop_atr),
@@ -92,21 +116,29 @@ def _load_technicals(cfg: JSPLSwingConfig):
 
 
 @st.cache_data(ttl=300, show_spinner="Fetching news sentiment…")
-def _load_sentiment(cfg: JSPLSwingConfig):
+def _load_sentiment(cfg: JSPLSwingConfig, company_name: str, sector: str, industry: str):
     return fetch_all_sentiment(
         cfg.yahoo_ticker,
         cfg.peer_yahoo_tickers,
         cfg.max_headlines_per_bucket,
         cfg.use_finbert,
+        symbol=cfg.symbol,
+        company_name=company_name,
+        sector=sector,
+        industry=industry,
+        is_steel_stock=cfg.is_steel_stock,
     )
 
 
 @st.cache_data(ttl=90, show_spinner="Live quotes…")
-def _load_live(cfg: JSPLSwingConfig):
+def _load_live(cfg: JSPLSwingConfig, stock_name: str):
     return fetch_live_dashboard(
         cfg.yahoo_ticker,
         cfg.metal_index_candidates,
         cfg.peer_yahoo_tickers,
+        stock_name=stock_name,
+        benchmark_index=cfg.benchmark_index,
+        use_sector_benchmark=cfg.is_steel_stock,
     )
 
 
@@ -305,14 +337,15 @@ def main() -> None:
     if st.sidebar.button("Refresh now", type="primary"):
         st.cache_data.clear()
 
-    st.title("JINDALSTEL Swing Decision Support")
-    st.caption("Steel macro · sector · stock sentiment · confluence · ATR risk plan")
-    st.markdown(DISCLAIMER)
-
-    live = _load_live(cfg)
-    sentiment = _load_sentiment(cfg)
     df, fundamentals, adherence, swing_bt = _load_technicals(cfg)
+    company_name = fundamentals.company_name or cfg.symbol
+    live = _load_live(cfg, company_name)
+    sentiment = _load_sentiment(cfg, company_name, fundamentals.sector, fundamentals.industry)
     stock = live["stock"]
+
+    st.title(f"{company_name} ({cfg.symbol}) Swing Decision Support")
+    st.caption("Sector/macro · peer · stock sentiment · confluence · ATR risk plan")
+    st.markdown(DISCLAIMER)
 
     df_trade, zone_label, live_ltp, eod_close, eod_bar = apply_live_for_trading(
         df,
@@ -346,13 +379,13 @@ def main() -> None:
     # --- Top metrics ---
     metal = live["metal"]
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("JINDALSTEL", f"₹{stock.price:,.2f}", f"{stock.change_pct:+.2f}%")
+    c1.metric(cfg.symbol, f"₹{stock.price:,.2f}", f"{stock.change_pct:+.2f}%")
     c2.metric(metal.name, f"₹{metal.price:,.2f}" if metal.price else "—", f"{metal.change_pct:+.2f}%")
     c3.metric("Confluence", f"{confluence.score}/100", confluence.label)
     c4.metric("Bias", decision.bias, f"R:R {decision.reward_risk:.1f}")
     c5.metric("ATR (next session)", f"₹{plan.atr:,.2f}", f"{plan.atr_pct:.2f}% of price")
     rs = live.get("relative_strength_20d")
-    c6.metric("RS vs metal (20d)", f"{rs:+.1f}%" if rs is not None else "—")
+    c6.metric("RS vs benchmark (20d)", f"{rs:+.1f}%" if rs is not None else "—")
 
     trade_ctx = build_session_trade_context(
         plan,
@@ -386,7 +419,7 @@ def main() -> None:
                     text=f"{bucket.name}: {bucket.label} ({bucket.avg_compound:+.2f})",
                 )
         with col_r:
-            st.subheader("Steel peers")
+            st.subheader("Sector peers" if cfg.is_steel_stock else f"Benchmark: {metal.name}")
             if live["peers"]:
                 st.dataframe(
                     pd.DataFrame(

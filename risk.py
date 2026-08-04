@@ -29,10 +29,7 @@ class TradeDecision:
 
 
 def _sentiment_ok(buckets: dict[str, SentimentBucket], min_compound: float = -0.12) -> tuple[bool, str]:
-    macro = buckets.get("steel_macro")
-    sector = buckets.get("steel_sector")
-    stock = buckets.get("jindalstel")
-    scores = [b.avg_compound for b in (macro, sector, stock) if b and b.count > 0]
+    scores = [b.avg_compound for b in buckets.values() if b and b.count > 0]
     if not scores:
         return True, "sentiment data sparse — neutral pass"
     avg = sum(scores) / len(scores)

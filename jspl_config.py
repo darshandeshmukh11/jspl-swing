@@ -41,6 +41,7 @@ class JSPLSwingConfig:
         "VEDL",
         "NMDC",
     )
+    benchmark_index: str = "^NSEI"  # NIFTY 50 — generic benchmark for any stock
 
     adx_trend_min: float = 22.0
     adx_strong: float = 28.0
@@ -51,6 +52,11 @@ class JSPLSwingConfig:
     macd_slow: int = 26
     macd_signal: int = 9
     stoch_period: int = 14
+
+    @property
+    def is_steel_stock(self) -> bool:
+        sym = self.symbol.strip().upper()
+        return sym == "JINDALSTEL" or sym in self.steel_peers
 
     @property
     def dss(self) -> _DSSConfig:
@@ -71,4 +77,6 @@ class JSPLSwingConfig:
     def peer_yahoo_tickers(self) -> list[str]:
         from data import to_yahoo_nse
 
-        return [to_yahoo_nse(s) for s in self.steel_peers]
+        if self.is_steel_stock:
+            return [to_yahoo_nse(s) for s in self.steel_peers]
+        return []
